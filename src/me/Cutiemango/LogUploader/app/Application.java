@@ -1,7 +1,8 @@
 package me.Cutiemango.LogUploader.app;
 
+import me.Cutiemango.LogUploader.AbstractLogEntry;
 import me.Cutiemango.LogUploader.Encounter;
-import me.Cutiemango.LogUploader.uploader.UploadHelper;
+import me.Cutiemango.LogUploader.PreferenceManager;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -12,47 +13,32 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JToggleButton;
 import javax.swing.SwingConstants;
-import javax.swing.border.LineBorder;
-import java.awt.Color;
-import java.awt.Cursor;
-import java.awt.Desktop;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.GridLayout;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
-import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.io.File;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 public class Application
 {
 	private JFrame frame;
-	// 0, 1, 2, 3, 4, 5, 6(Button)
-	private JPanel mainPanel, directoryPanel, typePanel, wingPanel, encounterPanel, characterPanel, filePanel;
+	// 0, 1, 2, 3, 4, 5(Button)
+	private JPanel mainPanel, directoryPanel, typePanel, wingPanel, encounterPanel, filePanel;
 	// The button at the lowest right
-	private JButton button;
-	private Font GLOBAL_FONT = new Font("微軟正黑體", Font.PLAIN, 18);
+	private JButton globalButton;
+
+	private static final Font GLOBAL_FONT = new Font("微軟正黑體", Font.PLAIN, 18);
 
 	// Selected Items
 	private int SELECTED_ENCOUNTER_TYPE = -1;
 	private int SELECTED_RAID_WING = 0;
 	private List<Encounter> SELECTED_ENCOUNTERS = new ArrayList<>();
-	private String CHARACTER = "";
-
-	private String LOG_DIRECTORY = null;
 
 	public Application(String title, int width, int height)
 	{
@@ -61,6 +47,7 @@ public class Application
 
 		frame.setSize(width, height);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setResizable(false);
 		frame.add(mainPanel);
 
 		mainPanel.setLayout(null);
@@ -77,23 +64,19 @@ public class Application
 		encounterPanel = new JPanel();
 		encounterPanel.setBounds(0, 180, 960, 60);
 
-		characterPanel = new JPanel();
-		characterPanel.setBounds(0, 240, 960, 60);
-
 		filePanel = new JPanel();
-		filePanel.setBounds(0, 300, 960, 180);
+		filePanel.setBounds(0, 240, 960, 240);
 
-		button = createButton("Next");
-		button.setBounds(0, 500, 960, 60);
-		button.setVisible(false);
+		globalButton = createButton("Next");
+		globalButton.setBounds(10, 500, 930, 60);
+		globalButton.setVisible(false);
 
 		mainPanel.add(directoryPanel);
 		mainPanel.add(typePanel);
 		mainPanel.add(wingPanel);
 		mainPanel.add(encounterPanel);
-		mainPanel.add(characterPanel);
 		mainPanel.add(filePanel);
-		mainPanel.add(button);
+		mainPanel.add(globalButton);
 
 		setUpDirectory();
 
@@ -102,13 +85,14 @@ public class Application
 
 	public void setUpDirectory()
 	{
+		PreferenceManager.loadPreference();
 		// Set up directory panel
-		directoryPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+		directoryPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 0));
 
 		JLabel directory = createLabel("ArcDPS Log Directory: ");
 		directoryPanel.add(directory);
 
-		JLabel msg = createLabel("<Please select the directory>");
+		JLabel msg = createLabel(PreferenceManager.hasDirectorySet() ? PreferenceManager.getLogDirectory() : "<Please select the directory>");
 		directoryPanel.add(msg);
 
 		JButton browse = createButton("Browse");
@@ -120,20 +104,23 @@ public class Application
 			int returnVal = fc.showOpenDialog(null);
 			if (returnVal == JFileChooser.APPROVE_OPTION)
 			{
-				if (LOG_DIRECTORY == null)
-					selectType();
-				LOG_DIRECTORY = fc.getSelectedFile().getAbsolutePath();
+				PreferenceManager.setLogDirectory(fc.getSelectedFile().getAbsolutePath());
+				selectType();
 			}
-			msg.setText(hasDirectorySelected() ? LOG_DIRECTORY : "<Not a valid directory>");
+			msg.setText(PreferenceManager.hasDirectorySet() ? PreferenceManager.getLogDirectory() : "<Not a valid directory>");
 		});
 
 		directoryPanel.add(browse);
+
+
+		if (PreferenceManager.hasDirectorySet())
+			selectType();
 	}
 
 	// Step: 2
 	public void selectType()
 	{
-		typePanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+		typePanel.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 0));
 
 		JLabel label = createLabel("Select Type: ");
 		typePanel.add(label);
@@ -149,7 +136,6 @@ public class Application
 			SELECTED_ENCOUNTER_TYPE = 1;
 			resetType();
 			selectEncounters();
-
 		});
 
 		raid.addActionListener(e ->
@@ -180,6 +166,9 @@ public class Application
 			panel.revalidate();
 			panel.repaint();
 		}
+
+		// Reset button as well
+		globalButton.setText("Next");
 	}
 
 	private void resetType()
@@ -188,12 +177,14 @@ public class Application
 		SELECTED_ENCOUNTERS.clear();
 
 		checkRemovePanels(2);
+
+		globalButton.setVisible(false);
 	}
 
 	// Step: 3
 	public void selectWing()
 	{
-		wingPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+		wingPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 0));
 
 		JLabel label = createLabel("Select Wing: ");
 		wingPanel.add(label);
@@ -217,7 +208,7 @@ public class Application
 	// Step: 4
 	public void selectEncounters()
 	{
-		encounterPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+		encounterPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 0));
 
 		JLabel label = createLabel("Select Encounter(s): ");
 		encounterPanel.add(label);
@@ -227,6 +218,10 @@ public class Application
 				.forEach(encounter ->
 				{
 					JToggleButton button = createToggleButton(encounter.toString());
+
+					if (SELECTED_ENCOUNTERS.contains(encounter))
+						button.setSelected(true);
+
 					button.addActionListener(e ->
 					{
 						checkRemovePanels(4);
@@ -235,206 +230,104 @@ public class Application
 							SELECTED_ENCOUNTERS.add(encounter);
 						else
 							SELECTED_ENCOUNTERS.remove(encounter);
+
+						globalButton.setVisible(SELECTED_ENCOUNTERS.size() != 0);
 					});
 
 					encounterPanel.add(button);
 				});
 
-		button.addActionListener(e ->
+		globalButton.addActionListener(e ->
 		{
-			resetActionListener();
-			selectCharacter();
-
-			characterPanel.revalidate();
-			characterPanel.repaint();
-		});
-		button.setVisible(true);
-	}
-
-	// Step: 5
-	public void selectCharacter()
-	{
-		characterPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
-
-		JLabel label = createLabel("Select Character: ");
-		characterPanel.add(label);
-
-		Set<String> characters = getCharacters(SELECTED_ENCOUNTERS);
-		JComboBox<String> comboBox = createComboBox(characters.toArray(new String[characters.size()]));
-
-		button.addActionListener(e ->
-		{
-			checkRemovePanels(5);
-
-			CHARACTER = (String)comboBox.getSelectedItem();
-			resetActionListener();
 			selectFile();
-
-			filePanel.revalidate();
-			filePanel.repaint();
 		});
-
-		characterPanel.add(comboBox);
-		button.setVisible(true);
+		resetActionListener();
 	}
 
 	public void selectFile()
 	{
-		filePanel.setLayout(new GridLayout(1, 3));
+		filePanel.setLayout(null);
+		JLabel title = createLabel("Select File(s): ");
+		title.setBounds(10, 0, 120, 50);
+		title.setVerticalAlignment(SwingConstants.TOP);
+		filePanel.add(title);
 
-		int count = SELECTED_ENCOUNTERS.size();
-
-		JPanel encounters = new JPanel();
-		encounters.setLayout(new GridLayout(count, 1));
-		filePanel.add(encounters);
-
-		JPanel boxPanel = new JPanel();
-		boxPanel.setLayout(new GridLayout(count, 1));
-		filePanel.add(boxPanel);
-
-		JPanel copyButtons = new JPanel();
-		copyButtons.setLayout(new GridLayout(count, 1));
-		filePanel.add(copyButtons);
-
-		HashMap<Encounter, List<File>> map = new HashMap<>();
-		HashMap<Encounter, JComboBox> boxes = new HashMap<>();
+		HashMap<Encounter, AbstractLogEntry> map = new HashMap<>();
+		int offset = 0;
+		// Initialize File Panel
 		for (Encounter encounter : SELECTED_ENCOUNTERS)
 		{
-			JLabel lab = createLabel(encounter.toString() + ": ");
-			lab.setHorizontalAlignment(SwingConstants.RIGHT);
-			encounters.add(lab);
+			AbstractLogEntry entry = new AbstractLogEntry(encounter, offset++);
+			entry.createTitle(filePanel);
+			entry.createComboBox(filePanel);
 
-			List<File> fileList = getLogFiles(encounter);
-			Collections.reverse(fileList);
-			List<String> list = fileList.stream().map(file -> file.getName()).collect(Collectors.toList());
-
-			JComboBox comboBox = createComboBox(list.toArray(new String[list.size()]));
-			boxPanel.add(comboBox);
-
-			boxes.put(encounter, comboBox);
-			map.put(encounter, fileList);
+			map.put(encounter, entry);
 		}
 
-		button.setText("Upload All");
-		button.addActionListener(e ->
+		globalButton.setText("Upload All");
+		globalButton.addActionListener(e ->
 		{
+			globalButton.setText("Uploading...");
+			System.out.println("Started upload task.");
+
 			List<String> links = new ArrayList<>();
 			for (Encounter encounter : SELECTED_ENCOUNTERS)
 			{
-				JComboBox box = boxes.get(encounter);
-				File f = map.get(encounter).get(box.getSelectedIndex());
-				System.out.println("File Selected: " + box.getSelectedItem());
+				AbstractLogEntry entry = map.get(encounter);
+				entry.uploadSelectedFile();
+				links.add(entry.getLink());
 
-				String link = UploadHelper.upload(f);
-				System.out.println("Link Generated for \'" + f.getName() + "\' : " + link);
-				links.add(encounter.toString() + ": " + link);
-
-				JLabel linkLabel = createLabel(link);
-				linkLabel.setForeground(Color.BLUE.darker());
-				linkLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-				linkLabel.addMouseListener(new MouseAdapter()
-				{
-					@Override
-					public void mouseClicked(MouseEvent e)
-					{
-						try
-						{
-							Desktop.getDesktop().browse(new URI(link));
-						}
-						catch (Exception ex)
-						{
-							ex.printStackTrace();
-						}
-					}
-
-					@Override
-					public void mouseExited(MouseEvent e)
-					{
-						linkLabel.setText(link);
-					}
-
-					@Override
-					public void mouseEntered(MouseEvent e)
-					{
-						linkLabel.setText("<html><a href=''>" + link + "</a></html>");
-					}
-				});
-
-				boxPanel.add(linkLabel, SELECTED_ENCOUNTERS.indexOf(encounter));
-
-				JButton button = createButton("Copy");
-				button.addActionListener(evt ->
-				{
-					StringSelection stringSelection = new StringSelection(link);
-					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-					clipboard.setContents(stringSelection, null);
-					button.setText("Copied");
-				});
-				button.setHorizontalAlignment(SwingConstants.LEFT);
-				copyButtons.add(button);
+				entry.createLogLink(filePanel);
+				entry.createCopyButton(filePanel);
 			}
 
-			resetActionListener();
+			System.out.println("Upload task finished.");
 
-			button.setText("Copy All");
-			button.addActionListener(e1 ->
-			{
-				resetActionListener();
+			createCopyAll(links);
 
-				StringSelection stringSelection = new StringSelection(String.join("\n", links));
-				Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-				clipboard.setContents(stringSelection, null);
-			});
-			button.setVisible(true);
+			filePanel.revalidate();
+			filePanel.repaint();
 		});
-		button.revalidate();
-		button.repaint();
+		resetActionListener();
+
+		filePanel.revalidate();
+		filePanel.repaint();
 	}
 
-	private Set<String> getCharacters(Encounter encounter)
+	private void createCopyAll(List<String> links)
 	{
-		Set<String> result = new HashSet<>();
-		for (File f : new File(LOG_DIRECTORY + File.separator + encounter.getFileName()).listFiles())
-			result.add(f.getName());
-
-		return result;
+		globalButton.setText("Copy All");
+		globalButton.addActionListener(e ->
+		{
+			StringSelection stringSelection = new StringSelection(String.join("\n", links));
+			Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+			clipboard.setContents(stringSelection, null);
+		});
+		resetActionListener();
 	}
 
-	private Set<String> getCharacters(List<Encounter> encounters)
-	{
-		Set<String> result = new HashSet<>();
-		for (Encounter encounter : encounters)
-			result.addAll(getCharacters(encounter));
-		return result;
-	}
-
-	private List<File> getLogFiles(Encounter encounter)
-	{
-		return Arrays.asList(new File(LOG_DIRECTORY + File.separator + encounter.getFileName() + File.separator + CHARACTER).listFiles());
-	}
-
-	private JComboBox createComboBox(String[] items)
+	public static JComboBox createComboBox(String[] items)
 	{
 		JComboBox comboBox = new JComboBox(items);
 		comboBox.setFont(GLOBAL_FONT);
 		return comboBox;
 	}
 
-	private JButton createButton(String title)
+	public static JButton createButton(String title)
 	{
 		JButton button = new JButton(title);
 		button.setFont(GLOBAL_FONT);
 		return button;
 	}
 
-	private JLabel createLabel(String s)
+	public static JLabel createLabel(String s)
 	{
 		JLabel label = new JLabel(s);
 		label.setFont(GLOBAL_FONT);
 		return label;
 	}
 
-	private JToggleButton createToggleButton(String title)
+	public static JToggleButton createToggleButton(String title)
 	{
 		JToggleButton button = new JToggleButton(title);
 		button.setFont(GLOBAL_FONT);
@@ -443,35 +336,17 @@ public class Application
 
 	private void resetActionListener()
 	{
-		button.removeActionListener(button.getActionListeners()[0]);
-	}
-	public boolean hasDirectorySelected()
-	{
-		return LOG_DIRECTORY != null;
+		while (globalButton.getActionListeners().length > 1)
+			globalButton.removeActionListener(globalButton.getActionListeners()[1]);
 	}
 
 	public boolean hasRaidSelected()
 	{
-		return hasDirectorySelected() && SELECTED_ENCOUNTER_TYPE == 2;
-	}
-
-	public boolean hasFotmSelected()
-	{
-		return hasDirectorySelected() && SELECTED_ENCOUNTER_TYPE == 1;
+		return SELECTED_ENCOUNTER_TYPE == 2;
 	}
 
 	public boolean isRaidWingSet()
 	{
 		return hasRaidSelected() && SELECTED_RAID_WING != 0;
-	}
-
-	public boolean hasEncounterSelected()
-	{
-		return (isRaidWingSet() || hasFotmSelected()) && !SELECTED_ENCOUNTERS.isEmpty();
-	}
-
-	public boolean hasCharacterSelected()
-	{
-		return hasEncounterSelected() && CHARACTER != null;
 	}
 }
