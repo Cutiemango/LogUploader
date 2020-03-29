@@ -232,6 +232,11 @@ public class Application
 							SELECTED_ENCOUNTERS.remove(encounter);
 
 						globalButton.setVisible(SELECTED_ENCOUNTERS.size() != 0);
+						globalButton.addActionListener(e2 ->
+						{
+							selectFile();
+						});
+						resetActionListener();
 					});
 
 					encounterPanel.add(button);
